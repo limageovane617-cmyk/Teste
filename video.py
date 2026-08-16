@@ -3,10 +3,20 @@ import time
 from pathlib import Path
 
 
+# ============================================================
+# CONFIGURAÇÕES
+# ============================================================
+
 PASTA_VIDEOS = Path("videos")
 PASTA_VIDEOS.mkdir(exist_ok=True)
 
 DURACAO_PADRAO = 8
+
+PROPORCOES = [
+    "16:9",
+    "9:16",
+    "1:1",
+]
 
 CAMERAS = [
     "Sony FX5",
@@ -22,12 +32,17 @@ MOTORES_VIDEO = [
 ]
 
 
+# ============================================================
+# FUNÇÕES BÁSICAS
+# ============================================================
+
 def listar_motores():
     return MOTORES_VIDEO
 
 
 def listar_cameras():
     return CAMERAS
+
 
 # ============================================================
 # MOTOR VEO / GEMINI
@@ -40,7 +55,7 @@ def gerar_com_veo(
     nome_arquivo="video_veo.mp4"
 ):
     """
-    Geração de vídeo usando Google Gemini / Veo.
+    Gera vídeo usando Google Gemini / Veo.
     """
 
     chave = (
@@ -54,8 +69,11 @@ def gerar_com_veo(
         )
 
     try:
+
         from google import genai
+
     except ImportError:
+
         raise RuntimeError(
             "A biblioteca google-genai não está instalada."
         )
@@ -71,12 +89,19 @@ def gerar_com_veo(
 
     print("🎬 Iniciando geração com Veo...")
 
+    # --------------------------------------------------------
+    # INICIA GERAÇÃO
+    # --------------------------------------------------------
+
     operacao = client.models.generate_videos(
         model=modelo,
         prompt=prompt
     )
 
-    # Aguarda a geração terminar
+    # --------------------------------------------------------
+    # AGUARDA RESULTADO
+    # --------------------------------------------------------
+
     tentativas = 60
 
     for _ in range(tentativas):
@@ -89,22 +114,34 @@ def gerar_com_veo(
             break
 
         try:
+
             operacao = client.operations.get(
                 operacao
             )
+
         except Exception:
+
             pass
 
         time.sleep(5)
+
+    # --------------------------------------------------------
+    # VERIFICA SE TERMINOU
+    # --------------------------------------------------------
 
     if not getattr(
         operacao,
         "done",
         False
     ):
+
         raise RuntimeError(
             "O Veo demorou demais para finalizar."
         )
+
+    # --------------------------------------------------------
+    # PEGA RESULTADO
+    # --------------------------------------------------------
 
     resultado = (
         getattr(
@@ -121,9 +158,14 @@ def gerar_com_veo(
     )
 
     if resultado is None:
+
         raise RuntimeError(
             "O Veo não retornou resultado."
         )
+
+    # --------------------------------------------------------
+    # PEGA VÍDEOS
+    # --------------------------------------------------------
 
     videos = getattr(
         resultado,
@@ -132,6 +174,7 @@ def gerar_com_veo(
     )
 
     if not videos:
+
         videos = getattr(
             resultado,
             "videos",
@@ -139,6 +182,7 @@ def gerar_com_veo(
         )
 
     if not videos:
+
         raise RuntimeError(
             "Nenhum vídeo foi retornado pelo Veo."
         )
@@ -152,14 +196,18 @@ def gerar_com_veo(
     )
 
     if arquivo is None:
+
         arquivo = video
+
+    # --------------------------------------------------------
+    # SALVA ARQUIVO
+    # --------------------------------------------------------
 
     caminho = (
         PASTA_VIDEOS /
         nome_arquivo
     )
 
-    # Tenta baixar usando a SDK
     try:
 
         client.files.download(
@@ -173,6 +221,10 @@ def gerar_com_veo(
             f"Não foi possível salvar o vídeo: {erro}"
         )
 
+    # --------------------------------------------------------
+    # CONFIRMA ARQUIVO
+    # --------------------------------------------------------
+
     if not caminho.exists():
 
         raise RuntimeError(
@@ -180,3 +232,122 @@ def gerar_com_veo(
         )
 
     return str(caminho)
+
+
+# ============================================================
+# PROMPT DE VÍDEO
+# ============================================================
+
+def montar_prompt_video(
+    descricao,
+    camera="Sony FX6",
+    proporcao="16:9",
+    duracao=8
+):
+
+    return f"""
+Crie um vídeo cinematográfico de aproximadamente
+{duracao} segundos.
+
+DESCRIÇÃO:
+{descricao}
+
+CÂMERA:
+{camera}
+
+PROPORÇÃO:
+{proporcao}
+
+CONTINUIDADE DO PERSONAGEM:
+
+- manter exatamente o mesmo personagem;
+- manter o mesmo rosto;
+- manter o mesmo cabelo;
+- manter o mesmo corpo;
+- manter a mesma roupa;
+- manter os mesmos acessórios;
+- manter a mesma identidade visual;
+- se a câmera sair do personagem e retornar,
+  mostrar exatamente o mesmo personagem;
+- não trocar a roupa;
+- não trocar o rosto;
+- não criar uma segunda versão do personagem;
+- manter iluminação consistente;
+- manter cenário consistente;
+- evitar deformações;
+- evitar personagens duplicados;
+- movimentos naturais;
+- câmera cinematográfica suave.
+
+ESTILO:
+
+cinematográfico,
+realista,
+alta qualidade,
+movimentos naturais.
+""".strip()
+
+
+# ============================================================
+# GERADOR DE VÍDEO
+# ============================================================
+
+def gerar_video(
+    descricao,
+    camera="Sony FX6",
+    proporcao="16:9",
+    duracao=8,
+    nome_arquivo="video.mp4"
+):
+
+    prompt = montar_prompt_video(
+        descricao=descricao,
+        camera=camera,
+        proporcao=proporcao,
+        duracao=duracao
+    )
+
+    caminho = gerar_com_veo(
+        prompt=prompt,
+        duracao=duracao,
+        proporcao=proporcao,
+        nome_arquivo=nome_arquivo
+    )
+
+    return {
+        "sucesso": True,
+        "motor": "Veo",
+        "caminho": caminho,
+        "prompt": prompt
+    }
+
+
+# ============================================================
+# TESTE
+# ============================================================
+
+if __name__ == "__main__":
+
+    print(
+        "🎬 Alex IA Ultra"
+    )
+
+    print(
+        "Motores:",
+        listar_motores()
+    )
+
+    print(
+        "Câmeras:",
+        listar_cameras()
+    )
+
+    print(
+        "Duração:",
+        DURACAO_PADRAO,
+        "segundos"
+    )
+
+    print(
+        "✅ video.py carregado corretamente."
+    )
