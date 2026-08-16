@@ -355,43 +355,189 @@ if __name__ == "__main__":
 # TESTE DE AUTENTICAÇÃO GEMINI
 # ============================================================
 
-def testar_gemini():
+def gerar_com_veo(
+    prompt,
+    duracao=8,
+    proporcao="16:9",
+    nome_arquivo="video_veo.mp4"
+):
+    """
+    Geração de vídeo usando Google Gemini / Veo.
+    """
 
     chave = os.getenv("GEMINI_API_KEY")
 
     if not chave:
-        return {
-            "ok": False,
-            "erro": "GEMINI_API_KEY não encontrada."
-        }
+        raise RuntimeError(
+            "GEMINI_API_KEY não configurada."
+        )
 
     try:
         from google import genai
-
-        client = genai.Client(
-            api_key=chave
+    except ImportError:
+        raise RuntimeError(
+            "A biblioteca google-genai não está instalada."
         )
 
-        # Faz uma chamada simples ao Gemini
-        resposta = client.models.generate_content(
-            model="gemini-3.1-flash-lite",
-            contents="Responda apenas: OK"
-        )
+    client = genai.Client(
+        api_key=chave
+    )
 
-        texto = getattr(
-            resposta,
-            "text",
-            ""
-        )
+    modelo = os.getenv(
+        "VEO_MODEL",
+        "veo-3.1-generate-preview"
+    )
 
-        return {
-            "ok": True,
-            "resposta": texto
-        }
+    print("🎬 Iniciando Veo...")
+
+    try:
+
+        operacao = client.models.generate_videos(
+            model=modelo,
+            prompt=prompt,
+            config={
+                "aspect_ratio": proporcao,
+                "duration_seconds": duracao,
+            }
+        )
 
     except Exception as erro:
 
-        return {
-            "ok": False,
-            "erro": str(erro)
-        }
+        raise RuntimeError(
+            f"Erro ao iniciar o Veo: {erro}"
+        )
+
+    # ========================================================
+    # AGUARDA A OPERAÇÃO
+    # ========================================================
+
+    limite = 120
+
+    for tentativa in range(limite):
+
+        try:
+
+            if getattr(
+                operacao,
+                "done",
+                False
+            ):
+                break
+
+            operacao = client.operations.get(
+                operacao
+            )
+
+        except Exception as erro:
+
+            if tentativa >= 5:
+
+                raise RuntimeError(
+                    f"Erro acompanhando o Veo: {erro}"
+                )
+
+        time.sleep(5)
+
+    # ========================================================
+    # VERIFICA FINALIZAÇÃO
+    # ========================================================
+
+    if not getattr(
+        operacao,
+        "done",
+        False
+    ):
+
+        raise RuntimeError(
+            "O Veo não terminou a geração."
+        )
+
+    # ========================================================
+    # RESULTADO
+    # ========================================================
+
+    resultado = getattr(
+        operacao,
+        "result",
+        None
+    )
+
+    if resultado is None:
+
+        resultado = getattr(
+            operacao,
+            "response",
+            None
+        )
+
+    if resultado is None:
+
+        raise RuntimeError(
+            "O Veo terminou, mas não retornou resultado."
+        )
+
+    # ========================================================
+    # LOCALIZA O VÍDEO
+    # ========================================================
+
+    videos = getattr(
+        resultado,
+        "generated_videos",
+        None
+    )
+
+    if not videos:
+
+        raise RuntimeError(
+            "O Veo não retornou nenhum vídeo."
+        )
+
+    video = videos[0]
+
+    arquivo = getattr(
+        video,
+        "video",
+        None
+    )
+
+    if arquivo is None:
+
+        raise RuntimeError(
+            "O arquivo do vídeo não foi encontrado."
+        )
+
+    # ========================================================
+    # SALVA
+    # ========================================================
+
+    caminho = (
+        PASTA_VIDEOS /
+        nome_arquivo
+    )
+
+    try:
+
+        client.files.download(
+            file=arquivo,
+            path=str(caminho)
+        )
+
+    except Exception as erro:
+
+        raise RuntimeError(
+            f"Erro ao baixar o vídeo gerado: {erro}"
+        )
+
+    if not caminho.exists():
+
+        raise RuntimeError(
+            "O arquivo de vídeo não foi criado."
+        )
+
+    if caminho.stat().st_size == 0:
+
+        raise RuntimeError(
+            "O arquivo de vídeo ficou vazio."
+        )
+
+    return str(caminho)
