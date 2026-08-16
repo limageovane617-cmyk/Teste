@@ -351,3 +351,47 @@ if __name__ == "__main__":
     print(
         "✅ video.py carregado corretamente."
     )
+# ============================================================
+# TESTE DE AUTENTICAÇÃO GEMINI
+# ============================================================
+
+def testar_gemini():
+
+    chave = os.getenv("GEMINI_API_KEY")
+
+    if not chave:
+        return {
+            "ok": False,
+            "erro": "GEMINI_API_KEY não encontrada."
+        }
+
+    try:
+        from google import genai
+
+        client = genai.Client(
+            api_key=chave
+        )
+
+        # Faz uma chamada simples ao Gemini
+        resposta = client.models.generate_content(
+            model="gemini-3.1-flash-lite",
+            contents="Responda apenas: OK"
+        )
+
+        texto = getattr(
+            resposta,
+            "text",
+            ""
+        )
+
+        return {
+            "ok": True,
+            "resposta": texto
+        }
+
+    except Exception as erro:
+
+        return {
+            "ok": False,
+            "erro": str(erro)
+        }
