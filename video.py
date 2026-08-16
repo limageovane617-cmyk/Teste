@@ -1,3 +1,11 @@
+import os
+import time
+from pathlib import Path
+
+
+PASTA_VIDEOS = Path("videos")
+PASTA_VIDEOS.mkdir(exist_ok=True)
+
 DURACAO_PADRAO = 8
 
 CAMERAS = [
