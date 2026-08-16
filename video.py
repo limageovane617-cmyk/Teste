@@ -301,7 +301,7 @@ def extrair_video(resultado):
         if isinstance(
             video,
             dict
-        ):
+        )
 
             return (
                 video.get("path")
@@ -311,14 +311,14 @@ def extrair_video(resultado):
         if isinstance(
             video,
             str
-        ):
+        )
 
             return video
 
     if isinstance(
         resultado,
         (list, tuple)
-    ):
+    )
 
         for item in resultado:
 
