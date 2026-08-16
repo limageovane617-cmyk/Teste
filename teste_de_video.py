@@ -2,47 +2,111 @@ import streamlit as st
 import video
 
 st.set_page_config(
-    page_title="Alex IA - Teste de Vídeo",
+    page_title="Alex IA — Imagem para Vídeo",
     page_icon="🎬"
 )
 
-st.title("🎬 Alex IA — Teste do Veo")
+st.title("🎬 Alex IA — Imagem → Vídeo")
 
-st.success("Sistema de vídeo carregado!")
-
-descricao = st.text_area(
-    "Descrição do vídeo",
-    value="Um robô humanoide caminhando por uma cidade futurista à noite, com luzes cinematográficas."
+st.write(
+    "Envie uma imagem e descreva o movimento "
+    "que você quer transformar em vídeo."
 )
 
+# ============================================================
+# IMAGEM
+# ============================================================
+
+imagem = st.file_uploader(
+    "🖼️ Escolha uma imagem",
+    type=[
+        "png",
+        "jpg",
+        "jpeg",
+        "webp"
+    ]
+)
+
+if imagem:
+
+    st.image(
+        imagem,
+        caption="Imagem de referência",
+        use_container_width=True
+    )
+
+# ============================================================
+# MOVIMENTO
+# ============================================================
+
+movimento = st.text_area(
+    "🎬 Descreva o movimento",
+    placeholder=(
+        "Exemplo: o personagem começa a caminhar "
+        "lentamente em direção à câmera enquanto "
+        "o vento movimenta sua roupa."
+    ),
+    height=120
+)
+
+# ============================================================
+# CÂMERA
+# ============================================================
+
 camera = st.selectbox(
-    "Câmera",
+    "📷 Câmera",
     video.listar_cameras()
 )
 
+# ============================================================
+# PROPORÇÃO
+# ============================================================
+
 proporcao = st.selectbox(
-    "Proporção",
-    video.PROPORCOES
+    "📐 Proporção",
+    video.listar_proporcoes()
 )
 
-if st.button("🎬 Gerar vídeo com Veo"):
+# ============================================================
+# BOTÃO
+# ============================================================
 
-    with st.spinner("Gerando vídeo com Veo..."):
+if st.button(
+    "🎬 Gerar vídeo",
+    type="primary"
+):
 
-        try:
+    if imagem is None:
 
-            resultado = video.gerar_video(
-                descricao=descricao,
-                camera=camera,
-                proporcao=proporcao,
-                duracao=8,
-                nome_arquivo="teste_veo.mp4"
-            )
+        st.warning(
+            "🖼️ Primeiro envie uma imagem."
+        )
 
-            if resultado["sucesso"]:
+    elif not movimento.strip():
+
+        st.warning(
+            "✍️ Descreva o movimento do vídeo."
+        )
+
+    else:
+
+        with st.spinner(
+            "🎬 Gerando vídeo a partir da imagem..."
+        ):
+
+            try:
+
+                resultado = video.gerar_video(
+                    imagem=imagem,
+                    movimento=movimento,
+                    camera=camera,
+                    proporcao=proporcao,
+                    duracao=5,
+                    nome_arquivo="video_i2v.mp4"
+                )
 
                 st.success(
-                    "✅ Vídeo gerado com sucesso!"
+                    "✅ Vídeo gerado!"
                 )
 
                 st.video(
@@ -50,39 +114,16 @@ if st.button("🎬 Gerar vídeo com Veo"):
                 )
 
                 st.write(
-                    "Motor usado:",
+                    "🎥 Motor:",
                     resultado["motor"]
                 )
 
-            else:
+            except Exception as erro:
 
                 st.error(
                     "❌ Não foi possível gerar o vídeo."
                 )
 
-        except Exception as erro:
-
-            st.error(
-                "❌ Erro ao gerar vídeo:"
-            )
-
-            st.code(
-                str(erro)
-            )
-            st.divider()
-
-st.subheader("🔐 Teste da API Gemini")
-
-if st.button("🔎 Testar autenticação"):
-
-    resultado = video.testar_gemini()
-
-    if resultado["ok"]:
-
-        st.success("✅ Gemini autenticado!")
-        st.write(resultado["resposta"])
-
-    else:
-
-        st.error("❌ Gemini não autenticado")
-        st.code(resultado["erro"])
+                st.code(
+                    str(erro)
+                )
