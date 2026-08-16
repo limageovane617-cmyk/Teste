@@ -69,3 +69,20 @@ if st.button("🎬 Gerar vídeo com Veo"):
             st.code(
                 str(erro)
             )
+            st.divider()
+
+st.subheader("🔐 Teste da API Gemini")
+
+if st.button("🔎 Testar autenticação"):
+
+    resultado = video.testar_gemini()
+
+    if resultado["ok"]:
+
+        st.success("✅ Gemini autenticado!")
+        st.write(resultado["resposta"])
+
+    else:
+
+        st.error("❌ Gemini não autenticado")
+        st.code(resultado["erro"])
