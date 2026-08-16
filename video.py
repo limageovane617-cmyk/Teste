@@ -1,52 +1,28 @@
-"""
-Alex IA Ultra
-Gerador de vídeo a partir de imagem + descrição de movimento.
-
-Fluxo:
-    imagem -> prompt de movimento -> vídeo
-
-O arquivo foi feito para funcionar no Streamlit Cloud
-sem tentar carregar modelos gigantes localmente.
-"""
-
-from __future__ import annotations
-
 import os
-import time
 from pathlib import Path
-from typing import Optional
+import requests
 
-
-# ============================================================
-# CONFIGURAÇÕES
-# ============================================================
 
 PASTA_VIDEOS = Path("videos")
-PASTA_VIDEOS.mkdir(parents=True, exist_ok=True)
+PASTA_VIDEOS.mkdir(exist_ok=True)
 
-DURACAO_PADRAO = 5
-
-PROPORCOES = [
-    "16:9",
-    "9:16",
-    "1:1",
+MOTORES_VIDEO = [
+    "Kling 2.1 — Replicate"
 ]
 
 CAMERAS = [
     "Sony FX5",
     "Sony FX6",
     "Canon EOS C80",
-    "ARRI Alexa Mini LF",
+    "ARRI Alexa Mini LF"
 ]
 
-MOTORES_VIDEO = [
-    "Hugging Face",
+PROPORCOES = [
+    "16:9",
+    "9:16",
+    "1:1"
 ]
 
-
-# ============================================================
-# LISTAS
-# ============================================================
 
 def listar_motores():
     return MOTORES_VIDEO
@@ -60,253 +36,250 @@ def listar_proporcoes():
     return PROPORCOES
 
 
-# ============================================================
-# TOKEN
-# ============================================================
+def obter_token_replicate():
 
-def obter_token_huggingface():
-    """
-    Procura o token do Hugging Face no ambiente.
-
-    No Streamlit Cloud:
-        Settings -> Secrets
-
-    Nome recomendado:
-        HF_TOKEN
-    """
-
-    token = os.getenv("HF_TOKEN")
+    token = os.getenv("REPLICATE_API_TOKEN")
 
     if not token:
-        token = os.getenv("HUGGINGFACE_TOKEN")
+        raise RuntimeError(
+            "REPLICATE_API_TOKEN não foi encontrado."
+        )
 
     return token
 
 
-# ============================================================
-# VERIFICAÇÃO
-# ============================================================
-
-def verificar_huggingface():
-    """
-    Verifica se existe token configurado.
-    """
-
-    token = obter_token_huggingface()
-
-    if not token:
-        return {
-            "ok": False,
-            "erro": (
-                "HF_TOKEN não configurado."
-            ),
-        }
-
-    return {
-        "ok": True,
-        "mensagem": "Hugging Face configurado.",
-    }
-
-
-# ============================================================
-# PROMPT DE MOVIMENTO
-# ============================================================
-
-def montar_prompt_movimento(
-    movimento: str,
-    camera: str = "Sony FX6",
-):
-    """
-    Transforma a descrição simples do usuário
-    em uma descrição mais adequada para Image-to-Video.
-    """
+def montar_prompt(movimento, camera):
 
     return f"""
 Animate the provided image into a realistic cinematic video.
 
-SUBJECT MOTION:
+Movement:
 {movimento}
 
-CAMERA:
+Camera:
 {camera}
 
-IMPORTANT:
+Keep the exact same character from the reference image.
 
-- Preserve the exact identity of the subject.
-- Preserve the face and facial structure.
-- Preserve clothing.
-- Preserve hairstyle.
-- Preserve body proportions.
-- Preserve colors and accessories.
-- Do not create another character.
-- Do not change the subject's identity.
-- Keep the original environment consistent.
-- Natural realistic movement.
-- Smooth cinematic camera movement.
-- Realistic lighting.
-- Natural physics.
-- No sudden scene changes.
-- No duplicated body parts.
-- No extra fingers.
-- No distorted face.
-- No melting objects.
-- No text or subtitles.
+Preserve:
+- face
+- hairstyle
+- clothing
+- body
+- accessories
+- colors
+- identity
 
-The input image is the visual reference.
-Animate the scene instead of replacing the subject.
-""".strip()
+Do not create another character.
+
+Do not change the clothes.
+
+Do not change the face.
+
+Do not duplicate the character.
+
+Use natural realistic movement.
+
+Smooth cinematic camera movement.
+
+Realistic lighting and physics.
+
+The image is the visual reference.
+"""
 
 
-# ============================================================
-# IMAGE -> VIDEO
-# ============================================================
-
-def gerar_video_huggingface(
+def gerar_video_replicate(
     imagem,
-    movimento: str,
-    camera: str = "Sony FX6",
-    proporcao: str = "16:9",
-    nome_arquivo: str = "video_i2v.mp4",
+    movimento,
+    camera="Sony FX6",
+    proporcao="16:9",
+    duracao=5,
+    nome_arquivo="video_kling.mp4"
 ):
-    """
-    Gera vídeo a partir de uma imagem.
 
-    imagem:
-        arquivo enviado pelo Streamlit
-        ou caminho de arquivo.
+    token = obter_token_replicate()
 
-    movimento:
-        descrição do que deve acontecer na cena.
-    """
-
-    token = obter_token_huggingface()
-
-    if not token:
-        raise RuntimeError(
-            "HF_TOKEN não configurado no Streamlit Secrets."
-        )
-
-    try:
-        from huggingface_hub import InferenceClient
-
-    except ImportError:
-        raise RuntimeError(
-            "huggingface_hub não está instalado."
-        )
-
-    # --------------------------------------------------------
-    # SALVA A IMAGEM TEMPORARIAMENTE
-    # --------------------------------------------------------
-
-    arquivo_imagem = Path(
-        "imagem_referencia_i2v"
+    prompt = montar_prompt(
+        movimento,
+        camera
     )
 
-    if hasattr(imagem, "read"):
+    # --------------------------------------------------------
+    # SALVA A IMAGEM
+    # --------------------------------------------------------
 
-        dados = imagem.read()
+    if hasattr(imagem, "getvalue"):
 
-        nome_original = getattr(
-            imagem,
-            "name",
-            "imagem.png"
-        )
+        imagem_bytes = imagem.getvalue()
 
-        extensao = Path(
-            nome_original
-        ).suffix or ".png"
+    elif isinstance(imagem, bytes):
 
-        arquivo_imagem = Path(
-            "imagem_referencia_i2v" + extensao
-        )
-
-        arquivo_imagem.write_bytes(
-            dados
-        )
-
-    elif isinstance(
-        imagem,
-        (str, Path)
-    ):
-
-        arquivo_imagem = Path(imagem)
+        imagem_bytes = imagem
 
     else:
 
-        raise TypeError(
-            "A imagem precisa ser um arquivo enviado "
-            "ou um caminho de arquivo."
-        )
+        with open(imagem, "rb") as arquivo:
+            imagem_bytes = arquivo.read()
 
-    if not arquivo_imagem.exists():
+    # --------------------------------------------------------
+    # CONVERTE PARA DATA URL
+    # --------------------------------------------------------
+
+    import base64
+
+    imagem_base64 = base64.b64encode(
+        imagem_bytes
+    ).decode("utf-8")
+
+    nome = getattr(
+        imagem,
+        "name",
+        "imagem.jpg"
+    )
+
+    if nome.lower().endswith(".png"):
+        mime = "image/png"
+    elif nome.lower().endswith(".webp"):
+        mime = "image/webp"
+    else:
+        mime = "image/jpeg"
+
+    imagem_url = (
+        f"data:{mime};base64,{imagem_base64}"
+    )
+
+    # --------------------------------------------------------
+    # REPLICATE
+    # --------------------------------------------------------
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json"
+    }
+
+    dados = {
+        "input": {
+            "prompt": prompt,
+            "start_image": imagem_url,
+            "duration": 5,
+            "aspect_ratio": proporcao
+        }
+    }
+
+    # Modelo Kling 2.1
+    url = (
+        "https://api.replicate.com/v1/models/"
+        "kwaivgi/kling-v2.1/predictions"
+    )
+
+    resposta = requests.post(
+        url,
+        headers=headers,
+        json=dados,
+        timeout=60
+    )
+
+    if resposta.status_code >= 400:
 
         raise RuntimeError(
-            "A imagem de referência não foi encontrada."
+            "Erro ao iniciar o Replicate:\n"
+            + resposta.text
+        )
+
+    operacao = resposta.json()
+
+    prediction_url = operacao.get(
+        "urls",
+        {}
+    ).get(
+        "get"
+    )
+
+    if not prediction_url:
+
+        raise RuntimeError(
+            "O Replicate não retornou "
+            "a URL da operação."
         )
 
     # --------------------------------------------------------
-    # PROMPT
+    # AGUARDA
     # --------------------------------------------------------
 
-    prompt = montar_prompt_movimento(
-        movimento=movimento,
-        camera=camera,
-    )
+    for _ in range(120):
 
-    # --------------------------------------------------------
-    # MODELO
-    # --------------------------------------------------------
+        resposta = requests.get(
+            prediction_url,
+            headers={
+                "Authorization":
+                    f"Bearer {token}"
+            },
+            timeout=60
+        )
 
-    modelo = os.getenv(
-        "HF_VIDEO_MODEL",
-        "Wan-AI/Wan2.1-I2V-14B-480P-diffusers"
-    )
+        if resposta.status_code >= 400:
 
-    # --------------------------------------------------------
-    # CLIENTE
-    # --------------------------------------------------------
-
-    client = InferenceClient(
-        provider="hf-inference",
-        api_key=token,
-    )
-
-    # --------------------------------------------------------
-    # GERAÇÃO
-    # --------------------------------------------------------
-
-    try:
-
-        with open(
-            arquivo_imagem,
-            "rb"
-        ) as arquivo:
-
-            video_bytes = client.image_to_video(
-                image=arquivo,
-                prompt=prompt,
-                model=modelo,
+            raise RuntimeError(
+                "Erro consultando Replicate:\n"
+                + resposta.text
             )
 
-    except Exception as erro:
+        resultado = resposta.json()
+
+        status = resultado.get(
+            "status"
+        )
+
+        if status == "succeeded":
+            break
+
+        if status in [
+            "failed",
+            "canceled"
+        ]:
+
+            erro = resultado.get(
+                "error",
+                "Erro desconhecido."
+            )
+
+            raise RuntimeError(
+                f"Geração falhou: {erro}"
+            )
+
+        import time
+        time.sleep(3)
+
+    else:
 
         raise RuntimeError(
-            "Erro no motor Hugging Face "
-            f"Image-to-Video:\n{erro}"
+            "O Replicate demorou demais."
         )
 
     # --------------------------------------------------------
-    # VALIDA RESULTADO
+    # PEGA VÍDEO
     # --------------------------------------------------------
 
-    if video_bytes is None:
+    saida = resultado.get(
+        "output"
+    )
+
+    if not saida:
 
         raise RuntimeError(
-            "O Hugging Face não retornou vídeo."
+            "O Replicate terminou sem retornar vídeo."
         )
 
+    if isinstance(saida, list):
+
+        video_url = saida[0]
+
+    else:
+
+        video_url = saida
+
     # --------------------------------------------------------
-    # SALVA VÍDEO
+    # BAIXA VÍDEO
     # --------------------------------------------------------
 
     caminho = (
@@ -314,123 +287,50 @@ def gerar_video_huggingface(
         nome_arquivo
     )
 
-    try:
+    video_resposta = requests.get(
+        video_url,
+        timeout=180
+    )
 
-        if isinstance(
-            video_bytes,
-            bytes
-        ):
-
-            caminho.write_bytes(
-                video_bytes
-            )
-
-        elif hasattr(
-            video_bytes,
-            "read"
-        ):
-
-            caminho.write_bytes(
-                video_bytes.read()
-            )
-
-        else:
-
-            caminho.write_bytes(
-                bytes(video_bytes)
-            )
-
-    except Exception as erro:
+    if video_resposta.status_code != 200:
 
         raise RuntimeError(
-            f"Erro salvando o vídeo: {erro}"
+            "Não foi possível baixar o vídeo."
         )
 
-    if not caminho.exists():
-
-        raise RuntimeError(
-            "O arquivo de vídeo não foi criado."
-        )
+    caminho.write_bytes(
+        video_resposta.content
+    )
 
     if caminho.stat().st_size == 0:
 
         raise RuntimeError(
-            "O vídeo retornado está vazio."
+            "O vídeo baixado está vazio."
         )
 
     return str(caminho)
 
 
-# ============================================================
-# FUNÇÃO PRINCIPAL
-# ============================================================
-
 def gerar_video(
     imagem,
-    movimento: str,
-    camera: str = "Sony FX6",
-    proporcao: str = "16:9",
-    duracao: int = 5,
-    nome_arquivo: str = "video.mp4",
+    movimento,
+    camera="Sony FX6",
+    proporcao="16:9",
+    duracao=5,
+    nome_arquivo="video.mp4"
 ):
-    """
-    Função principal do Alex IA.
 
-    Recebe:
-        imagem
-        descrição do movimento
-
-    Retorna:
-        informações do vídeo gerado.
-    """
-
-    if not movimento.strip():
-
-        raise ValueError(
-            "Descreva o movimento que deve acontecer."
-        )
-
-    caminho = gerar_video_huggingface(
+    caminho = gerar_video_replicate(
         imagem=imagem,
         movimento=movimento,
         camera=camera,
         proporcao=proporcao,
-        nome_arquivo=nome_arquivo,
+        duracao=duracao,
+        nome_arquivo=nome_arquivo
     )
 
     return {
         "sucesso": True,
-        "motor": "Hugging Face",
-        "caminho": caminho,
-        "movimento": movimento,
-        "camera": camera,
-        "proporcao": proporcao,
-        "duracao": duracao,
+        "motor": "Kling 2.1 — Replicate",
+        "caminho": caminho
     }
-
-
-# ============================================================
-# TESTE DO MÓDULO
-# ============================================================
-
-if __name__ == "__main__":
-
-    print("🎬 Alex IA Ultra")
-    print("Gerador Image-to-Video")
-    print()
-    print(
-        "Motores:",
-        listar_motores()
-    )
-    print(
-        "Câmeras:",
-        listar_cameras()
-    )
-    print(
-        "Proporções:",
-        listar_proporcoes()
-    )
-    print()
-    print(
-        "✅ video.py carregado corretamente."
-    )
