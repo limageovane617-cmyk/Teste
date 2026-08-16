@@ -922,7 +922,7 @@ def gerar_video_com_fallback(
     proporcao="16:9",
     duracao=0.5,
     nome_arquivo="video.mp4"
-):
+)
 
     return gerar_video(
         imagem=imagem,
@@ -932,3 +932,38 @@ def gerar_video_com_fallback(
         duracao=duracao,
         nome_arquivo=nome_arquivo
     )
+    def mostrar_configuracao_video():
+    """
+    Configuração visual do módulo de vídeo.
+    Mantida para compatibilidade com o app.py.
+    """
+
+    import streamlit as st
+
+    st.subheader("🎬 Configuração de Vídeo")
+
+    camera = st.selectbox(
+        "📷 Câmera",
+        CAMERAS,
+        index=1
+    )
+
+    proporcao = st.selectbox(
+        "📐 Proporção",
+        PROPORCOES,
+        index=0
+    )
+
+    duracao = st.number_input(
+        "⏱️ Duração",
+        min_value=0.5,
+        max_value=10.0,
+        value=0.5,
+        step=0.5
+    )
+
+    return {
+        "camera": camera,
+        "proporcao": proporcao,
+        "duracao": duracao
+    }
