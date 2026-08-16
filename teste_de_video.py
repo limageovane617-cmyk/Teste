@@ -1,16 +1,10 @@
-"""
-Alex IA Ultra — Gerenciador de geração de vídeos
-Sistema de múltiplos motores com fallback automático.
-"""
+import streamlit as st
 
-from __future__ import annotations
+st.set_page_config(
+    page_title="Teste Alex IA",
+    page_icon="🎬"
+)
 
-import os
-import time
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
-
-
-# ============================================================
-# CONFIGURAÇÕES
-# ============================================================
+st.title("🎬 Alex IA")
+st.success("O Streamlit está funcionando!")
+st.write("Teste de vídeo")
