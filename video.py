@@ -1,6 +1,20 @@
+"""
+Alex IA Ultra
+Gerador de vídeo a partir de imagem + descrição de movimento.
+
+Fluxo:
+    imagem -> prompt de movimento -> vídeo
+
+O arquivo foi feito para funcionar no Streamlit Cloud
+sem tentar carregar modelos gigantes localmente.
+"""
+
+from __future__ import annotations
+
 import os
 import time
 from pathlib import Path
+from typing import Optional
 
 
 # ============================================================
@@ -8,9 +22,9 @@ from pathlib import Path
 # ============================================================
 
 PASTA_VIDEOS = Path("videos")
-PASTA_VIDEOS.mkdir(exist_ok=True)
+PASTA_VIDEOS.mkdir(parents=True, exist_ok=True)
 
-DURACAO_PADRAO = 8
+DURACAO_PADRAO = 5
 
 PROPORCOES = [
     "16:9",
@@ -26,14 +40,12 @@ CAMERAS = [
 ]
 
 MOTORES_VIDEO = [
-    "Veo",
-    "Replicate",
     "Hugging Face",
 ]
 
 
 # ============================================================
-# FUNÇÕES BÁSICAS
+# LISTAS
 # ============================================================
 
 def listar_motores():
@@ -44,471 +56,258 @@ def listar_cameras():
     return CAMERAS
 
 
+def listar_proporcoes():
+    return PROPORCOES
+
+
 # ============================================================
-# MOTOR VEO / GEMINI
+# TOKEN
 # ============================================================
 
-def gerar_com_veo(
-    prompt,
-    duracao=8,
-    proporcao="16:9",
-    nome_arquivo="video_veo.mp4"
-):
+def obter_token_huggingface():
     """
-    Gera vídeo usando Google Gemini / Veo.
+    Procura o token do Hugging Face no ambiente.
+
+    No Streamlit Cloud:
+        Settings -> Secrets
+
+    Nome recomendado:
+        HF_TOKEN
     """
 
-    chave = (
-        os.getenv("GEMINI_API_KEY")
-        or os.getenv("GOOGLE_API_KEY")
-    )
+    token = os.getenv("HF_TOKEN")
 
-    if not chave:
-        raise RuntimeError(
-            "GEMINI_API_KEY não configurada."
-        )
+    if not token:
+        token = os.getenv("HUGGINGFACE_TOKEN")
 
-    try:
-
-        from google import genai
-
-    except ImportError:
-
-        raise RuntimeError(
-            "A biblioteca google-genai não está instalada."
-        )
-
-    client = genai.Client(
-        api_key=chave
-    )
-
-    modelo = os.getenv(
-        "VEO_MODEL",
-        "veo-3.1-generate-preview"
-    )
-
-    print("🎬 Iniciando geração com Veo...")
-
-    # --------------------------------------------------------
-    # INICIA GERAÇÃO
-    # --------------------------------------------------------
-
-    operacao = client.models.generate_videos(
-        model=modelo,
-        prompt=prompt
-    )
-
-    # --------------------------------------------------------
-    # AGUARDA RESULTADO
-    # --------------------------------------------------------
-
-    tentativas = 60
-
-    for _ in range(tentativas):
-
-        if getattr(
-            operacao,
-            "done",
-            False
-        ):
-            break
-
-        try:
-
-            operacao = client.operations.get(
-                operacao
-            )
-
-        except Exception:
-
-            pass
-
-        time.sleep(5)
-
-    # --------------------------------------------------------
-    # VERIFICA SE TERMINOU
-    # --------------------------------------------------------
-
-    if not getattr(
-        operacao,
-        "done",
-        False
-    ):
-
-        raise RuntimeError(
-            "O Veo demorou demais para finalizar."
-        )
-
-    # --------------------------------------------------------
-    # PEGA RESULTADO
-    # --------------------------------------------------------
-
-    resultado = (
-        getattr(
-            operacao,
-            "result",
-            None
-        )
-        or
-        getattr(
-            operacao,
-            "response",
-            None
-        )
-    )
-
-    if resultado is None:
-
-        raise RuntimeError(
-            "O Veo não retornou resultado."
-        )
-
-    # --------------------------------------------------------
-    # PEGA VÍDEOS
-    # --------------------------------------------------------
-
-    videos = getattr(
-        resultado,
-        "generated_videos",
-        None
-    )
-
-    if not videos:
-
-        videos = getattr(
-            resultado,
-            "videos",
-            None
-        )
-
-    if not videos:
-
-        raise RuntimeError(
-            "Nenhum vídeo foi retornado pelo Veo."
-        )
-
-    video = videos[0]
-
-    arquivo = getattr(
-        video,
-        "video",
-        None
-    )
-
-    if arquivo is None:
-
-        arquivo = video
-
-    # --------------------------------------------------------
-    # SALVA ARQUIVO
-    # --------------------------------------------------------
-
-    caminho = (
-        PASTA_VIDEOS /
-        nome_arquivo
-    )
-
-    try:
-
-        client.files.download(
-            file=arquivo,
-            path=str(caminho)
-        )
-
-    except Exception as erro:
-
-        raise RuntimeError(
-            f"Não foi possível salvar o vídeo: {erro}"
-        )
-
-    # --------------------------------------------------------
-    # CONFIRMA ARQUIVO
-    # --------------------------------------------------------
-
-    if not caminho.exists():
-
-        raise RuntimeError(
-            "O arquivo de vídeo não foi criado."
-        )
-
-    return str(caminho)
+    return token
 
 
 # ============================================================
-# PROMPT DE VÍDEO
+# VERIFICAÇÃO
 # ============================================================
 
-def montar_prompt_video(
-    descricao,
-    camera="Sony FX6",
-    proporcao="16:9",
-    duracao=8
-):
+def verificar_huggingface():
+    """
+    Verifica se existe token configurado.
+    """
 
-    return f"""
-Crie um vídeo cinematográfico de aproximadamente
-{duracao} segundos.
+    token = obter_token_huggingface()
 
-DESCRIÇÃO:
-{descricao}
-
-CÂMERA:
-{camera}
-
-PROPORÇÃO:
-{proporcao}
-
-CONTINUIDADE DO PERSONAGEM:
-
-- manter exatamente o mesmo personagem;
-- manter o mesmo rosto;
-- manter o mesmo cabelo;
-- manter o mesmo corpo;
-- manter a mesma roupa;
-- manter os mesmos acessórios;
-- manter a mesma identidade visual;
-- se a câmera sair do personagem e retornar,
-  mostrar exatamente o mesmo personagem;
-- não trocar a roupa;
-- não trocar o rosto;
-- não criar uma segunda versão do personagem;
-- manter iluminação consistente;
-- manter cenário consistente;
-- evitar deformações;
-- evitar personagens duplicados;
-- movimentos naturais;
-- câmera cinematográfica suave.
-
-ESTILO:
-
-cinematográfico,
-realista,
-alta qualidade,
-movimentos naturais.
-""".strip()
-
-
-# ============================================================
-# GERADOR DE VÍDEO
-# ============================================================
-
-def gerar_video(
-    descricao,
-    camera="Sony FX6",
-    proporcao="16:9",
-    duracao=8,
-    nome_arquivo="video.mp4"
-):
-
-    prompt = montar_prompt_video(
-        descricao=descricao,
-        camera=camera,
-        proporcao=proporcao,
-        duracao=duracao
-    )
-
-    caminho = gerar_com_veo(
-        prompt=prompt,
-        duracao=duracao,
-        proporcao=proporcao,
-        nome_arquivo=nome_arquivo
-    )
+    if not token:
+        return {
+            "ok": False,
+            "erro": (
+                "HF_TOKEN não configurado."
+            ),
+        }
 
     return {
-        "sucesso": True,
-        "motor": "Veo",
-        "caminho": caminho,
-        "prompt": prompt
+        "ok": True,
+        "mensagem": "Hugging Face configurado.",
     }
 
 
 # ============================================================
-# TESTE
+# PROMPT DE MOVIMENTO
 # ============================================================
 
-if __name__ == "__main__":
-
-    print(
-        "🎬 Alex IA Ultra"
-    )
-
-    print(
-        "Motores:",
-        listar_motores()
-    )
-
-    print(
-        "Câmeras:",
-        listar_cameras()
-    )
-
-    print(
-        "Duração:",
-        DURACAO_PADRAO,
-        "segundos"
-    )
-
-    print(
-        "✅ video.py carregado corretamente."
-    )
-# ============================================================
-# TESTE DE AUTENTICAÇÃO GEMINI
-# ============================================================
-
-def gerar_com_veo(
-    prompt,
-    duracao=8,
-    proporcao="16:9",
-    nome_arquivo="video_veo.mp4"
+def montar_prompt_movimento(
+    movimento: str,
+    camera: str = "Sony FX6",
 ):
     """
-    Geração de vídeo usando Google Gemini / Veo.
+    Transforma a descrição simples do usuário
+    em uma descrição mais adequada para Image-to-Video.
     """
 
-    chave = os.getenv("GEMINI_API_KEY")
+    return f"""
+Animate the provided image into a realistic cinematic video.
 
-    if not chave:
+SUBJECT MOTION:
+{movimento}
+
+CAMERA:
+{camera}
+
+IMPORTANT:
+
+- Preserve the exact identity of the subject.
+- Preserve the face and facial structure.
+- Preserve clothing.
+- Preserve hairstyle.
+- Preserve body proportions.
+- Preserve colors and accessories.
+- Do not create another character.
+- Do not change the subject's identity.
+- Keep the original environment consistent.
+- Natural realistic movement.
+- Smooth cinematic camera movement.
+- Realistic lighting.
+- Natural physics.
+- No sudden scene changes.
+- No duplicated body parts.
+- No extra fingers.
+- No distorted face.
+- No melting objects.
+- No text or subtitles.
+
+The input image is the visual reference.
+Animate the scene instead of replacing the subject.
+""".strip()
+
+
+# ============================================================
+# IMAGE -> VIDEO
+# ============================================================
+
+def gerar_video_huggingface(
+    imagem,
+    movimento: str,
+    camera: str = "Sony FX6",
+    proporcao: str = "16:9",
+    nome_arquivo: str = "video_i2v.mp4",
+):
+    """
+    Gera vídeo a partir de uma imagem.
+
+    imagem:
+        arquivo enviado pelo Streamlit
+        ou caminho de arquivo.
+
+    movimento:
+        descrição do que deve acontecer na cena.
+    """
+
+    token = obter_token_huggingface()
+
+    if not token:
         raise RuntimeError(
-            "GEMINI_API_KEY não configurada."
+            "HF_TOKEN não configurado no Streamlit Secrets."
         )
 
     try:
-        from google import genai
+        from huggingface_hub import InferenceClient
+
     except ImportError:
         raise RuntimeError(
-            "A biblioteca google-genai não está instalada."
+            "huggingface_hub não está instalado."
         )
 
-    client = genai.Client(
-        api_key=chave
+    # --------------------------------------------------------
+    # SALVA A IMAGEM TEMPORARIAMENTE
+    # --------------------------------------------------------
+
+    arquivo_imagem = Path(
+        "imagem_referencia_i2v"
     )
+
+    if hasattr(imagem, "read"):
+
+        dados = imagem.read()
+
+        nome_original = getattr(
+            imagem,
+            "name",
+            "imagem.png"
+        )
+
+        extensao = Path(
+            nome_original
+        ).suffix or ".png"
+
+        arquivo_imagem = Path(
+            "imagem_referencia_i2v" + extensao
+        )
+
+        arquivo_imagem.write_bytes(
+            dados
+        )
+
+    elif isinstance(
+        imagem,
+        (str, Path)
+    ):
+
+        arquivo_imagem = Path(imagem)
+
+    else:
+
+        raise TypeError(
+            "A imagem precisa ser um arquivo enviado "
+            "ou um caminho de arquivo."
+        )
+
+    if not arquivo_imagem.exists():
+
+        raise RuntimeError(
+            "A imagem de referência não foi encontrada."
+        )
+
+    # --------------------------------------------------------
+    # PROMPT
+    # --------------------------------------------------------
+
+    prompt = montar_prompt_movimento(
+        movimento=movimento,
+        camera=camera,
+    )
+
+    # --------------------------------------------------------
+    # MODELO
+    # --------------------------------------------------------
 
     modelo = os.getenv(
-        "VEO_MODEL",
-        "veo-3.1-generate-preview"
+        "HF_VIDEO_MODEL",
+        "Wan-AI/Wan2.1-I2V-14B-480P-diffusers"
     )
 
-    print("🎬 Iniciando Veo...")
+    # --------------------------------------------------------
+    # CLIENTE
+    # --------------------------------------------------------
+
+    client = InferenceClient(
+        provider="hf-inference",
+        api_key=token,
+    )
+
+    # --------------------------------------------------------
+    # GERAÇÃO
+    # --------------------------------------------------------
 
     try:
 
-        operacao = client.models.generate_videos(
-            model=modelo,
-            prompt=prompt,
-            config={
-                "aspect_ratio": proporcao,
-                "duration_seconds": duracao,
-            }
-        )
+        with open(
+            arquivo_imagem,
+            "rb"
+        ) as arquivo:
+
+            video_bytes = client.image_to_video(
+                image=arquivo,
+                prompt=prompt,
+                model=modelo,
+            )
 
     except Exception as erro:
 
         raise RuntimeError(
-            f"Erro ao iniciar o Veo: {erro}"
+            "Erro no motor Hugging Face "
+            f"Image-to-Video:\n{erro}"
         )
 
-    # ========================================================
-    # AGUARDA A OPERAÇÃO
-    # ========================================================
+    # --------------------------------------------------------
+    # VALIDA RESULTADO
+    # --------------------------------------------------------
 
-    limite = 120
-
-    for tentativa in range(limite):
-
-        try:
-
-            if getattr(
-                operacao,
-                "done",
-                False
-            ):
-                break
-
-            operacao = client.operations.get(
-                operacao
-            )
-
-        except Exception as erro:
-
-            if tentativa >= 5:
-
-                raise RuntimeError(
-                    f"Erro acompanhando o Veo: {erro}"
-                )
-
-        time.sleep(5)
-
-    # ========================================================
-    # VERIFICA FINALIZAÇÃO
-    # ========================================================
-
-    if not getattr(
-        operacao,
-        "done",
-        False
-    ):
+    if video_bytes is None:
 
         raise RuntimeError(
-            "O Veo não terminou a geração."
+            "O Hugging Face não retornou vídeo."
         )
 
-    # ========================================================
-    # RESULTADO
-    # ========================================================
-
-    resultado = getattr(
-        operacao,
-        "result",
-        None
-    )
-
-    if resultado is None:
-
-        resultado = getattr(
-            operacao,
-            "response",
-            None
-        )
-
-    if resultado is None:
-
-        raise RuntimeError(
-            "O Veo terminou, mas não retornou resultado."
-        )
-
-    # ========================================================
-    # LOCALIZA O VÍDEO
-    # ========================================================
-
-    videos = getattr(
-        resultado,
-        "generated_videos",
-        None
-    )
-
-    if not videos:
-
-        raise RuntimeError(
-            "O Veo não retornou nenhum vídeo."
-        )
-
-    video = videos[0]
-
-    arquivo = getattr(
-        video,
-        "video",
-        None
-    )
-
-    if arquivo is None:
-
-        raise RuntimeError(
-            "O arquivo do vídeo não foi encontrado."
-        )
-
-    # ========================================================
-    # SALVA
-    # ========================================================
+    # --------------------------------------------------------
+    # SALVA VÍDEO
+    # --------------------------------------------------------
 
     caminho = (
         PASTA_VIDEOS /
@@ -517,15 +316,34 @@ def gerar_com_veo(
 
     try:
 
-        client.files.download(
-            file=arquivo,
-            path=str(caminho)
-        )
+        if isinstance(
+            video_bytes,
+            bytes
+        ):
+
+            caminho.write_bytes(
+                video_bytes
+            )
+
+        elif hasattr(
+            video_bytes,
+            "read"
+        ):
+
+            caminho.write_bytes(
+                video_bytes.read()
+            )
+
+        else:
+
+            caminho.write_bytes(
+                bytes(video_bytes)
+            )
 
     except Exception as erro:
 
         raise RuntimeError(
-            f"Erro ao baixar o vídeo gerado: {erro}"
+            f"Erro salvando o vídeo: {erro}"
         )
 
     if not caminho.exists():
@@ -537,7 +355,82 @@ def gerar_com_veo(
     if caminho.stat().st_size == 0:
 
         raise RuntimeError(
-            "O arquivo de vídeo ficou vazio."
+            "O vídeo retornado está vazio."
         )
 
     return str(caminho)
+
+
+# ============================================================
+# FUNÇÃO PRINCIPAL
+# ============================================================
+
+def gerar_video(
+    imagem,
+    movimento: str,
+    camera: str = "Sony FX6",
+    proporcao: str = "16:9",
+    duracao: int = 5,
+    nome_arquivo: str = "video.mp4",
+):
+    """
+    Função principal do Alex IA.
+
+    Recebe:
+        imagem
+        descrição do movimento
+
+    Retorna:
+        informações do vídeo gerado.
+    """
+
+    if not movimento.strip():
+
+        raise ValueError(
+            "Descreva o movimento que deve acontecer."
+        )
+
+    caminho = gerar_video_huggingface(
+        imagem=imagem,
+        movimento=movimento,
+        camera=camera,
+        proporcao=proporcao,
+        nome_arquivo=nome_arquivo,
+    )
+
+    return {
+        "sucesso": True,
+        "motor": "Hugging Face",
+        "caminho": caminho,
+        "movimento": movimento,
+        "camera": camera,
+        "proporcao": proporcao,
+        "duracao": duracao,
+    }
+
+
+# ============================================================
+# TESTE DO MÓDULO
+# ============================================================
+
+if __name__ == "__main__":
+
+    print("🎬 Alex IA Ultra")
+    print("Gerador Image-to-Video")
+    print()
+    print(
+        "Motores:",
+        listar_motores()
+    )
+    print(
+        "Câmeras:",
+        listar_cameras()
+    )
+    print(
+        "Proporções:",
+        listar_proporcoes()
+    )
+    print()
+    print(
+        "✅ video.py carregado corretamente."
+    )
